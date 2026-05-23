@@ -1,0 +1,238 @@
+---
+/**
+ * CurrencyPicker.astro
+ * --------------------
+ *
+ * Frontend currency picker for static / SSG stores. Auto-detects the
+ * user's likely currency from `navigator.language`, renders a
+ * dropdown, persists the choice to localStorage, and rewrites every
+ * `[data-price-original]` element on the page when the choice
+ * changes.
+ *
+ * ## DOM contract
+ *
+ * Annotate every price in your markup:
+ *
+ * ```astro
+ * <span
+ *   data-price-original={price}
+ *   data-price-currency="GBP"
+ *   class="price"
+ * >£{price}</span>
+ * ```
+ *
+ * `data-price-original` carries the raw number (in the base
+ * currency). `data-price-currency` carries the ISO-4217 code; if
+ * absent the picker assumes the first item in `currencies` is the
+ * base. Existing `.price` elements without these attrs are skipped
+ * — useful for gradual migration.
+ *
+ * ## Reactive updates
+ *
+ * If your page mutates prices on the client (e.g. swapping a
+ * variation selector), dispatch a `wg:prices-updated` CustomEvent
+ * after the swap. The picker re-runs the conversion pass so the new
+ * values land in the active currency.
+ *
+ * ```js
+ * document.dispatchEvent(new CustomEvent('wg:prices-updated'));
+ * ```
+ *
+ * @example
+ *   ---
+ *   import { CurrencyPicker } from '@arraypress/currency-picker-astro';
+ *   import { defaultCurrencies, defaultLocaleMap } from '@arraypress/currency-picker-astro/presets';
+ *   ---
+ *   <footer>
+ *     <CurrencyPicker
+ *       currencies={defaultCurrencies}
+ *       localeToCurrency={defaultLocaleMap}
+ *     />
+ *   </footer>
+ */
+
+import type { CurrencyPickerProps } from './types';
+
+const {
+	currencies,
+	localeToCurrency = {},
+	storageKey = 'ap-currency',
+	variant = 'footer',
+	class: className,
+	label = 'Choose currency',
+} = Astro.props as CurrencyPickerProps;
+
+if (!Array.isArray(currencies) || currencies.length === 0) {
+	throw new Error('[currency-picker-astro] `currencies` prop must be a non-empty array.');
+}
+
+const baseCode = currencies[0].code;
+const opensUp = variant === 'footer';
+---
+
+<div class="cp-root" data-cp-root>
+	<button
+		type="button"
+		class:list={['cp-trigger', className]}
+		aria-haspopup="listbox"
+		aria-expanded="false"
+		data-cp-trigger
+		aria-label={label}
+	>
+		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="cp-icon" aria-hidden="true">
+			<path d="M3 6h18M3 12h18M3 18h12"/>
+		</svg>
+		<span data-cp-current>{baseCode}</span>
+		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" class="cp-caret" aria-hidden="true">
+			<polyline points="6 9 12 15 18 9"/>
+		</svg>
+	</button>
+
+	<ul
+		class:list={['cp-panel', opensUp ? 'cp-panel--up' : 'cp-panel--down']}
+		role="listbox"
+		data-cp-panel
+		data-open="false"
+	>
+		{currencies.map(c => (
+			<li>
+				<button
+					type="button"
+					class="cp-option"
+					data-cp-pick={c.code}
+					role="option"
+					aria-selected={c.code === baseCode ? 'true' : 'false'}
+				>
+					<span class="cp-option-code">{c.code}</span>
+					<span class="cp-option-label">{c.label}</span>
+				</button>
+			</li>
+		))}
+	</ul>
+</div>
+
+<script
+	is:inline
+	define:vars={{
+		CP_CURRENCIES: currencies,
+		CP_LOCALE_MAP: localeToCurrency,
+		CP_STORAGE_KEY: storageKey,
+		CP_BASE: baseCode,
+	}}
+>
+	(function () {
+		if (window.__apCurrencyPickerBound) return;
+		window.__apCurrencyPickerBound = true;
+
+		function findInfo(code) {
+			return CP_CURRENCIES.find(function (c) { return c.code === code; }) || CP_CURRENCIES[0];
+		}
+
+		function fmt(amount, info) {
+			try {
+				return new Intl.NumberFormat(undefined, {
+					style: 'currency',
+					currency: info.code,
+					maximumFractionDigits: info.decimals != null ? info.decimals : 2,
+				}).format(amount);
+			} catch (_) {
+				var dp = info.decimals != null ? info.decimals : 2;
+				return info.symbol + amount.toFixed(dp);
+			}
+		}
+
+		function detectCurrency() {
+			try {
+				var saved = localStorage.getItem(CP_STORAGE_KEY);
+				if (saved && CP_CURRENCIES.find(function (c) { return c.code === saved; })) {
+					return saved;
+				}
+			} catch (_) {}
+			var lang = (navigator && navigator.language) || CP_BASE;
+			return CP_LOCALE_MAP[lang] || CP_LOCALE_MAP[lang.split('-')[0]] || CP_BASE;
+		}
+
+		var current = detectCurrency();
+
+		function applyConversion() {
+			var info = findInfo(current);
+			/* Update every trigger label. */
+			document.querySelectorAll('[data-cp-current]').forEach(function (el) {
+				el.textContent = info.code;
+			});
+			/* Rewrite every tagged price. */
+			document.querySelectorAll('[data-price-original]').forEach(function (el) {
+				var raw = el.getAttribute('data-price-original') || '';
+				var value = Number(raw);
+				if (!isFinite(value) || value <= 0) return;
+				var base = (el.getAttribute('data-price-currency') || CP_BASE).toUpperCase();
+				/* Cache the server-rendered text, keyed by data-price-original.
+				 * When the original mutates (variant selector swap), the cache
+				 * refreshes too — preventing stale restore. */
+				if (
+					!el.dataset.priceServerText ||
+					el.dataset.priceServerTextFor !== raw
+				) {
+					el.dataset.priceServerText = el.textContent || '';
+					el.dataset.priceServerTextFor = raw;
+				}
+				if (info.code === base) {
+					el.textContent = el.dataset.priceServerText;
+					return;
+				}
+				var baseInfo = findInfo(base);
+				var valueInBase = base === CP_BASE ? value : value / (baseInfo.rate || 1);
+				var converted = valueInBase * info.rate;
+				el.textContent = fmt(converted, info);
+			});
+		}
+
+		function setCurrency(code) {
+			current = code;
+			try { localStorage.setItem(CP_STORAGE_KEY, code); } catch (_) {}
+			applyConversion();
+			document.dispatchEvent(new CustomEvent('currencychange', {
+				detail: { code: code },
+				bubbles: true,
+			}));
+		}
+
+		function wireup() {
+			document.querySelectorAll('[data-cp-root]').forEach(function (root) {
+				if (root.__apCpWired) return;
+				root.__apCpWired = true;
+				var trigger = root.querySelector('[data-cp-trigger]');
+				var panel = root.querySelector('[data-cp-panel]');
+				if (!trigger || !panel) return;
+				trigger.addEventListener('click', function (e) {
+					e.stopPropagation();
+					var isOpen = panel.dataset.open === 'true';
+					panel.dataset.open = isOpen ? 'false' : 'true';
+					trigger.setAttribute('aria-expanded', String(!isOpen));
+				});
+				root.querySelectorAll('[data-cp-pick]').forEach(function (btn) {
+					btn.addEventListener('click', function () {
+						setCurrency(btn.getAttribute('data-cp-pick'));
+						panel.dataset.open = 'false';
+						trigger.setAttribute('aria-expanded', 'false');
+					});
+				});
+			});
+			applyConversion();
+		}
+
+		document.addEventListener('click', function () {
+			document.querySelectorAll('[data-cp-panel][data-open="true"]').forEach(function (p) {
+				p.dataset.open = 'false';
+			});
+		});
+
+		if (document.readyState === 'loading') {
+			document.addEventListener('DOMContentLoaded', wireup);
+		} else {
+			wireup();
+		}
+		document.addEventListener('astro:page-load', wireup);
+		document.addEventListener('wg:prices-updated', applyConversion);
+	})();
+</script>
