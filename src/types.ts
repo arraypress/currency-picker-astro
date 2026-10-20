@@ -46,6 +46,11 @@ export interface CurrencyPickerProps {
 	variant?: 'footer' | 'header';
 	/** Extra classes appended to the trigger button. */
 	class?: string;
-	/** Aria-label for the trigger. Default: `'Choose currency'`. */
+	/**
+	 * What the trigger does, for its accessible name. The name is the
+	 * current code followed by this — `'GBP, Choose currency'` — so it
+	 * always contains the visible text (WCAG 2.5.3). Pass `''` to name the
+	 * trigger by its code alone. Default: `'Choose currency'`.
+	 */
 	label?: string;
 }

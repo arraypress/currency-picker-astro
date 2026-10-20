@@ -38,6 +38,16 @@
  * document.dispatchEvent(new CustomEvent('wg:prices-updated'));
  * ```
  *
+ * ## Accessible name
+ *
+ * The trigger's visible text is the current code ("GBP"), so its
+ * `aria-label` starts with that code and adds `label` after it —
+ * "GBP, Choose currency" — and is rewritten whenever the code changes.
+ * A label without the code would fail WCAG 2.5.3 (label in name): a
+ * speech-input user saying "click GBP" couldn't reach the button. A
+ * comma, not a dash, joins them, because screen readers pause on a comma
+ * but some speak a dash aloud.
+ *
  * @example
  *   ---
  *   import { CurrencyPicker } from '@arraypress/currency-picker-astro';
@@ -68,6 +78,8 @@ if (!Array.isArray(currencies) || currencies.length === 0) {
 
 const baseCode = currencies[0].code;
 const opensUp = variant === 'footer';
+/* Mirrors `triggerName()` in the script below. */
+const triggerName = label ? `${baseCode}, ${label}` : undefined;
 ---
 
 <div class="cp-root" data-cp-root>
@@ -77,7 +89,8 @@ const opensUp = variant === 'footer';
 		aria-haspopup="listbox"
 		aria-expanded="false"
 		data-cp-trigger
-		aria-label={label}
+		data-cp-label={label || undefined}
+		aria-label={triggerName}
 	>
 		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="cp-icon" aria-hidden="true">
 			<path d="M3 6h18M3 12h18M3 18h12"/>
@@ -154,11 +167,23 @@ const opensUp = variant === 'footer';
 
 		var current = detectCurrency();
 
+		/* The visible code first, then the trigger's purpose (WCAG 2.5.3). */
+		function triggerName(code, purpose) {
+			return purpose ? code + ', ' + purpose : code;
+		}
+
 		function applyConversion() {
 			var info = findInfo(current);
-			/* Update every trigger label. */
+			/* Update every trigger label, its accessible name, and which
+			 * option is selected. */
 			document.querySelectorAll('[data-cp-current]').forEach(function (el) {
 				el.textContent = info.code;
+			});
+			document.querySelectorAll('[data-cp-trigger][data-cp-label]').forEach(function (el) {
+				el.setAttribute('aria-label', triggerName(info.code, el.getAttribute('data-cp-label')));
+			});
+			document.querySelectorAll('[data-cp-pick]').forEach(function (el) {
+				el.setAttribute('aria-selected', el.getAttribute('data-cp-pick') === info.code ? 'true' : 'false');
 			});
 			/* Rewrite every tagged price. */
 			document.querySelectorAll('[data-price-original]').forEach(function (el) {

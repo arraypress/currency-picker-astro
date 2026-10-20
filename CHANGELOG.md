@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] — 2026-10-21
+
+### Changed
+
+- The trigger's `aria-label` is now the current code followed by `label` —
+  `"GBP, Choose currency"` rather than `"Choose currency"` — and it is
+  rewritten whenever the code changes. `label` is therefore the trigger's
+  purpose, not its whole name; pass `''` to name the trigger by its code
+  alone (no `aria-label` is rendered). The trigger also carries
+  `data-cp-label`, which the script reads to rebuild the name.
+
+### Fixed
+
+- WCAG 2.5.3 (label in name): the trigger's `aria-label` didn't contain its
+  visible text, the currency code, so speech-input users saying "click GBP"
+  couldn't reach it (axe `label-content-name-mismatch`).
+- `aria-selected` on the options never moved off the base currency. It now
+  follows the current currency, from detection and from a pick.
+
+### Tests
+
+- 9 runtime tests run the picker's script in jsdom: the trigger's name after
+  detection, a stored pick and a click; the `label` prop, empty `label` and
+  two pickers with different labels; and `aria-selected`. 22 tests in all.
+
 ## [1.0.1] — Unreleased
 
 ### Changed

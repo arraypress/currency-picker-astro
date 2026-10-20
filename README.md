@@ -91,6 +91,16 @@ document.addEventListener('currencychange', (e) => {
 Fires after every user-driven change. Auto-detection on first load
 does *not* fire this event.
 
+## Accessibility
+
+The trigger's visible text is the current code, so its accessible name
+starts with that code and adds `label` after it — `aria-label="GBP, Choose
+currency"` — and the picker rewrites it whenever the code changes (locale
+detection, a stored pick, or a click). That keeps the name containing the
+visible label, as WCAG 2.5.3 requires (axe `label-content-name-mismatch`):
+a speech-input user can say "click GBP". The open menu marks the current
+currency with `aria-selected="true"`.
+
 ## Props
 
 | Prop               | Default            | Description                                                       |
@@ -100,7 +110,7 @@ does *not* fire this event.
 | `storageKey`       | `'ap-currency'`    | localStorage key for persistence.                                 |
 | `variant`          | `'footer'`         | `'footer'` opens up, `'header'` opens down.                       |
 | `class`            | —                  | Extra classes on the trigger button.                              |
-| `label`            | `'Choose currency'`| aria-label for the trigger.                                       |
+| `label`            | `'Choose currency'`| What the trigger does. Its name is the code, then this: `'GBP, Choose currency'`. `''` names it by the code alone. |
 
 ## Styling
 
